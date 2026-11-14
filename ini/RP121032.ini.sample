@@ -1,0 +1,9 @@
+; RP121032.ini lives in the Windows directory and lists every RP1210 driver installed on the
+; machine. Applications read it to discover which adapters they can talk to.
+;
+; DO NOT overwrite an existing RP121032.ini: other vendors' drivers are listed in it. Add CANSUB32
+; to the existing APIImplementations line instead, comma separated. tools\install.bat does this
+; correctly; this file only shows the result.
+
+[RP1210Support]
+APIImplementations=CANSUB32

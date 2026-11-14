@@ -1,0 +1,32 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 27, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "condition": { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" }
+    },
+    {
+      "name": "x86",
+      "displayName": "32-bit (Win32)",
+      "inherits": "base",
+      "architecture": { "value": "Win32", "strategy": "set" }
+    },
+    {
+      "name": "x64",
+      "displayName": "64-bit (x64)",
+      "inherits": "base",
+      "architecture": { "value": "x64", "strategy": "set" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "x86", "configurePreset": "x86", "configuration": "Release" },
+    { "name": "x64", "configurePreset": "x64", "configuration": "Release" }
+  ],
+  "testPresets": [
+    { "name": "x86", "configurePreset": "x86", "configuration": "Release", "output": { "outputOnFailure": true } },
+    { "name": "x64", "configurePreset": "x64", "configuration": "Release", "output": { "outputOnFailure": true } }
+  ]
+}

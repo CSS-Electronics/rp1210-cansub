@@ -1,0 +1,19 @@
+build/
+dist/
+*.obj
+*.pdb
+*.ilk
+*.exp
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# A copy of the driver placed beside the LabVIEW example for local use.
+examples/labview-nixnet/CANSUB32.dll
+examples/labview-nixnet/CANSUB32.ini
+
+# Local maintainer and agent notes.
+CLAUDE.md
+
+# Internal driver reference and notes for agent development.
+internal/

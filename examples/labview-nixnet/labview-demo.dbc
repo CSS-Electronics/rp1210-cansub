@@ -1,0 +1,21 @@
+VERSION ""
+
+NS_ :
+
+BS_:
+
+BU_: RIG LABVIEW
+
+BO_ 256 EngineData: 8 RIG
+ SG_ EngineSpeed : 0|16@1+ (0.25,0) [0|8000] "rpm" Vector__XXX
+ SG_ EngineTorque : 16|16@1+ (0.1,-500) [-500|1500] "Nm" Vector__XXX
+ SG_ CoolantTemp : 32|8@1+ (1,-40) [-40|150] "degC" Vector__XXX
+
+BO_ 257 VehicleData: 8 RIG
+ SG_ VehicleSpeed : 0|16@1+ (0.01,0) [0|250] "km/h" Vector__XXX
+ SG_ BatteryVoltage : 16|16@1+ (0.001,0) [0|32] "V" Vector__XXX
+
+BO_ 512 RigCommand: 8 LABVIEW
+ SG_ TargetSpeed : 0|16@1+ (0.25,0) [0|8000] "rpm" RIG
+ SG_ Enable : 16|1@1+ (1,0) [0|1] "" RIG
+

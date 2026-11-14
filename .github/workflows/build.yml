@@ -1,0 +1,34 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      # Some paths inside the SDK's bundled mbedTLS exceed MAX_PATH.
+      - name: Enable long paths
+        run: git config --global core.longpaths true
+
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build x86 and x64, assemble dist
+        shell: cmd
+        run: build.bat
+
+      - name: Unit tests x86
+        run: ctest --preset x86
+
+      - name: Unit tests x64
+        run: ctest --preset x64
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rp1210-cansub-${{ github.sha }}
+          path: dist/

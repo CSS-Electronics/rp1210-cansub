@@ -1,0 +1,20 @@
+; RP1210 requires the entry points to be resolvable by plain name. Without this file MSVC decorates
+; __stdcall exports on x86 as _RP1210_ClientConnect@24 and no host application finds them.
+LIBRARY CANSUB32
+
+EXPORTS
+    RP1210_ClientConnect
+    RP1210_ClientDisconnect
+    RP1210_SendMessage
+    RP1210_ReadMessage
+    RP1210_SendCommand
+    RP1210_ReadVersion
+    RP1210_ReadDetailedVersion
+    RP1210_GetErrorMsg
+    RP1210_GetLastErrorMsg
+    RP1210_GetHardwareStatus
+    RP1210_Ioctl
+
+    ; CSS Electronics extension for LabVIEW + NI-XNET, not part of RP1210. See rp1210.h.
+    CANSUB_ReadXnetFrames
+    CANSUB_WriteXnetFrames

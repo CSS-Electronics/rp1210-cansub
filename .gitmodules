@@ -1,0 +1,3 @@
+[submodule "third_party/c-cpp-sdk-cansub"]
+	path = third_party/c-cpp-sdk-cansub
+	url = https://github.com/CSS-Electronics/c-cpp-sdk-cansub
