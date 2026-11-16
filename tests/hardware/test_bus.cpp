@@ -358,6 +358,108 @@ void test_error_frames()
 
 } // namespace
 
+void test_can_fd()
+{
+    printf("CAN FD across CH1-CH2\n");
+
+    const uint32_t rates[][2] = {{500000, 2000000}, {1000000, 4000000}};
+
+    for (const auto &rate : rates)
+    {
+        config_t config = default_config();
+
+        config.bitrate = rate[0];
+        config.data_bitrate = rate[1];
+
+        bus tx;
+        bus rx;
+
+        if (!ok(tx.open(host, 1, config)) || !ok(rx.open(host, 2, config)))
+        {
+            printf("  FAIL could not open both channels at %u/%u: %s / %s\n", rate[0], rate[1],
+                   tx.last_error().c_str(), rx.last_error().c_str());
+            failures++;
+
+            continue;
+        }
+
+        check(tx.data_timing().bitrate() == rate[1], "data timing resolves to the data rate");
+
+        drain(rx);
+
+        for (int brs = 0; brs <= 1; brs++)
+        {
+            frame_t sent;
+
+            sent.id = 0x18FF1234;
+            sent.extended = true;
+            sent.fd = true;
+            sent.brs = (brs != 0);
+            sent.len = 64;
+
+            for (int i = 0; i < 64; i++)
+            {
+                sent.data[i] = (uint8_t)(i * 3 + brs);
+            }
+
+            char what[96];
+
+            snprintf(what, sizeof(what), "%u/%u: send 64-byte FD frame%s", rate[0], rate[1],
+                     brs ? " with BRS" : "");
+            check(ok(tx.send(sent)), what);
+
+            frame_t got;
+
+            snprintf(what, sizeof(what), "%u/%u: FD frame%s received intact", rate[0], rate[1],
+                     brs ? " with BRS" : "");
+            check(ok(rx.recv(got, 2000)) && got.fd && got.brs == sent.brs && got.len == 64
+                      && got.id == sent.id && got.extended
+                      && memcmp(got.data, sent.data, 64) == 0,
+                  what);
+        }
+    }
+
+    /* A classic channel has only a placeholder data phase, so FD frames are refused. */
+    bus classic;
+
+    if (ok(classic.open(host, 1, default_config())))
+    {
+        frame_t fd;
+
+        fd.id = 0x123;
+        fd.fd = true;
+        fd.len = 12;
+
+        check(classic.send(fd) == status_t::invalid_argument,
+              "FD frame refused on a classic channel");
+        classic.close();
+    }
+    else
+    {
+        check(false, "open classic channel");
+    }
+
+    /* A listen-only channel sends nothing. */
+    config_t listen = default_config();
+
+    listen.listen_only = true;
+
+    bus quiet;
+
+    if (ok(quiet.open(host, 1, listen)))
+    {
+        const uint8_t one[] = {1};
+
+        check(quiet.send(frame_t::make(0x123, one, 1)) == status_t::invalid_argument,
+              "send refused on a listen-only channel");
+    }
+    else
+    {
+        printf("  (%s)\n", quiet.last_error().c_str());
+        check(false, "open listen-only channel");
+    }
+}
+
 int main(int argc, char **argv)
 {
     if (argc < 2)
@@ -376,6 +478,7 @@ int main(int argc, char **argv)
     test_filters();
     test_receive_own_messages();
     test_error_frames();
+    test_can_fd();
 
     printf("\n%s\n", failures == 0 ? "all bus tests passed" : "bus tests FAILED");
 

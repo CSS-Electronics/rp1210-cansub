@@ -44,7 +44,9 @@ This matters most for RP1210. Real RP1210 adapters are enumerated by their own d
 
 ## Bit timing comes from the SDK
 
-`cansub_calculate_bittiming()` gives the requested bit rate at an 80 % sample point, with different registers from the device's factory values (250 kbit/s is {1, 255, 64, 64} rather than {4, 63, 16, 16}). Both are valid, and frames pass between channels using each.
+`cansub_calculate_bittiming()` gives the requested nominal and data bit rates at the requested sample points (80 % unless the connect string sets `SamplePoint=` or `DataSamplePoint=`), with different registers from the device's factory values (250 kbit/s is {1, 255, 64, 64} rather than {4, 63, 16, 16}). Both are valid, and frames pass between channels using each.
+
+The device always runs in CAN FD mode, so the phy endpoint always gets a data phase. A classic channel (no `DataBaud=`) gets 1 Mbit/s as a placeholder, and libcansub refuses to send CAN FD frames on it. FD frames from the bus still arrive on any channel; `RP1210_ReadMessage` skips them, since the RP1210 message has no way to mark a frame as CAN FD, and the NI-XNET exports deliver them.
 
 ## Packaging
 

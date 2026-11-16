@@ -207,42 +207,84 @@ void test_hosts()
 
 void test_bit_timing()
 {
+    const uint32_t sp = bit_timing_t::default_sample_point;
     const uint32_t nominal[] = {125000, 250000, 500000, 1000000};
 
     for (uint32_t rate : nominal)
     {
         bit_timing_t timing;
+        bit_timing_t data;
         char what[96];
 
         snprintf(what, sizeof(what), "nominal %u: exact rate at 80.0%%", rate);
-        check(bit_timing_t::from_bitrate(rate, timing) && timing.bitrate() == rate
-                  && timing.sample_point_tenths() == 800 && timing.sjw >= 1
-                  && timing.sjw <= timing.seg2,
+        check(bit_timing_t::calculate(rate, sp, 1000000, sp, timing, data)
+                  && timing.bitrate() == rate && timing.sample_point_tenths() == 800
+                  && timing.sjw >= 1 && timing.sjw <= timing.seg2,
               what);
 
         printf("  nominal %7u: brp %u seg1 %u seg2 %u sjw %u\n", rate, timing.brp, timing.seg1,
                timing.seg2, timing.sjw);
     }
 
-    const uint32_t data[] = {500000, 1000000, 2000000, 4000000, 5000000};
+    const uint32_t data_rates[] = {500000, 1000000, 2000000, 4000000, 5000000, 8000000};
 
-    for (uint32_t rate : data)
+    for (uint32_t rate : data_rates)
     {
         bit_timing_t timing;
+        bit_timing_t data;
         char what[96];
 
         /* At 5 Mbit/s a bit is only 16 quanta of the 80 MHz clock, so 80.0% cannot be hit exactly
          * (the SDK gives 81.25%). Allow 2.5%. */
         snprintf(what, sizeof(what), "data %u: exact rate, sample point 80%% +/- 2.5%%", rate);
-        check(bit_timing_t::data_from_bitrate(rate, timing) && timing.bitrate() == rate
-                  && timing.sample_point_tenths() >= 775 && timing.sample_point_tenths() <= 825,
+        check(bit_timing_t::calculate(500000, sp, rate, sp, timing, data)
+                  && data.bitrate() == rate && data.sample_point_tenths() >= 775
+                  && data.sample_point_tenths() <= 825,
+              what);
+    }
+
+    /* Common CAN FD combinations with the sample points set explicitly. */
+    struct
+    {
+        uint32_t nominal, nominal_sp, data, data_sp;
+    } const combos[] = {
+        {500000, 8000, 2000000, 8000},
+        {500000, 8750, 2000000, 7500},
+        {1000000, 8000, 4000000, 7500},
+        {250000, 8750, 1000000, 8000},
+        {1000000, 7500, 8000000, 7000},
+    };
+
+    for (const auto &c : combos)
+    {
+        bit_timing_t timing;
+        bit_timing_t data;
+        char what[128];
+
+        snprintf(what, sizeof(what), "%u at %u + data %u at %u: rates exact, sample points within 1%%",
+                 c.nominal, c.nominal_sp, c.data, c.data_sp);
+
+        const bool found =
+            bit_timing_t::calculate(c.nominal, c.nominal_sp, c.data, c.data_sp, timing, data);
+        const int nominal_error = (int)timing.sample_point_tenths() * 10 - (int)c.nominal_sp;
+        const int data_error = (int)data.sample_point_tenths() * 10 - (int)c.data_sp;
+
+        check(found && timing.bitrate() == c.nominal && data.bitrate() == c.data
+                  && nominal_error >= -100 && nominal_error <= 100 && data_error >= -100
+                  && data_error <= 100,
               what);
     }
 
     bit_timing_t timing;
+    bit_timing_t data;
 
-    check(!bit_timing_t::from_bitrate(666000, timing), "666 kbit/s cannot be generated");
-    check(!bit_timing_t::from_bitrate(0, timing), "0 bit/s refused");
+    check(!bit_timing_t::calculate(666000, sp, 1000000, sp, timing, data),
+          "666 kbit/s cannot be generated");
+    check(!bit_timing_t::calculate(0, sp, 1000000, sp, timing, data), "0 bit/s refused");
+    check(!bit_timing_t::calculate(1000000, sp, 500000, sp, timing, data),
+          "data rate below nominal refused");
+    check(!bit_timing_t::calculate(500000, 10001, 2000000, sp, timing, data),
+          "sample point above 100% refused");
 }
 
 void test_results()

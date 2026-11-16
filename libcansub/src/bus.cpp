@@ -292,19 +292,20 @@ status_t bus::open(const std::string &host, int channel, const config_t &config)
         return status_t::invalid_argument;
     }
 
-    if (!bit_timing_t::from_bitrate(config.bitrate, self.nominal))
-    {
-        self.set_error("unsupported bitrate " + std::to_string(config.bitrate));
+    /* The phy endpoint requires a data phase even for classic CAN, so a channel without a data
+     * bitrate gets 1 Mbit/s at the default sample point, as python-can-cansub does. */
+    const bool fd = config.data_bitrate != 0;
+    const uint32_t data_bitrate = fd ? config.data_bitrate : 1000000;
+    const uint32_t data_sample_point =
+        fd ? config.data_sample_point : bit_timing_t::default_sample_point;
 
-        return status_t::invalid_argument;
-    }
-
-    /* The phy endpoint requires a data-timing block even for classic CAN, so a channel without a
-     * data bitrate still sends a nominal 1 Mbit/s block, as python-can-cansub does. */
-    if (!bit_timing_t::data_from_bitrate(config.data_bitrate != 0 ? config.data_bitrate : 1000000,
-                                        self.data))
+    if (!bit_timing_t::calculate(config.bitrate, config.sample_point, data_bitrate,
+                                 data_sample_point, self.nominal, self.data))
     {
-        self.set_error("unsupported data bitrate " + std::to_string(config.data_bitrate));
+        self.set_error("unsupported bit timing: " + std::to_string(config.bitrate) + " bit/s at "
+                       + std::to_string(config.sample_point) + "/100 %, data "
+                       + std::to_string(data_bitrate) + " bit/s at "
+                       + std::to_string(data_sample_point) + "/100 %");
 
         return status_t::invalid_argument;
     }
@@ -511,6 +512,19 @@ status_t bus::send(const frame_t &frame)
         return (self.link == nullptr) ? status_t::not_open : status_t::disconnected;
     }
 
+    /* A listen-only channel never drives the bus. */
+    if (self.config.listen_only)
+    {
+        return status_t::invalid_argument;
+    }
+
+    /* Without a data bitrate the data phase is a placeholder, so an FD frame would go out at a
+     * rate nobody chose. python-can-cansub refuses this case too. */
+    if (frame.fd && self.config.data_bitrate == 0)
+    {
+        return status_t::invalid_argument;
+    }
+
     cansub_frame raw;
 
     if (!sdk::frame_to_sdk(frame, raw))
@@ -593,6 +607,11 @@ const std::string &bus::api_version() const
 bit_timing_t bus::timing() const
 {
     return impl_->nominal;
+}
+
+bit_timing_t bus::data_timing() const
+{
+    return impl_->data;
 }
 
 std::string bus::last_error() const

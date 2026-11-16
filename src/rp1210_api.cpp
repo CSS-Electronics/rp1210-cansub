@@ -16,6 +16,7 @@
 #include "cansub/discover.hpp"
 
 #include "client.hpp"
+#include "connect_params.hpp"
 #include "ini.hpp"
 #include "j1939.hpp"
 #include "trace.hpp"
@@ -112,99 +113,6 @@ void split_protocol(const char *protocol, char *name, size_t name_size)
 bool protocol_is(const char *name, const char *want)
 {
     return _stricmp(name, want) == 0;
-}
-
-/* Finds a key in the argument list and copies its value. Keys are matched case-insensitively and
- * only at a token boundary, so "Baud=" does not match a vendor key ending in the same letters. */
-bool find_token(const char *protocol, const char *key, char *value, size_t value_size)
-{
-    const char *p = strchr(protocol, ':');
-
-    if (p == nullptr)
-    {
-        return false;
-    }
-
-    const size_t key_len = strlen(key);
-
-    p++;
-
-    while (*p != '\0')
-    {
-        while (*p == ' ' || *p == ',' || *p == ';')
-        {
-            p++;
-        }
-
-        if (*p == '\0')
-        {
-            break;
-        }
-
-        const char *token = p;
-
-        while (*p != '\0' && *p != ',' && *p != ';')
-        {
-            p++;
-        }
-
-        if ((size_t)(p - token) > key_len && _strnicmp(token, key, key_len) == 0
-            && token[key_len] == '=')
-        {
-            size_t i = 0;
-            const char *v = token + key_len + 1;
-
-            while (v < p && i + 1 < value_size)
-            {
-                value[i++] = *v++;
-            }
-
-            value[i] = '\0';
-
-            return true;
-        }
-    }
-
-    return false;
-}
-
-/* The value of a Baud= token, in bit/s.
- *
- * RP1210E section 14.10.5 allows two spellings of the same thing: a kBaud value ("125", "250",
- * "500", "666", "1000") or a bit rate "between 1001-1000000". So 1000 and below is kBaud and
- * anything above is bit/s, which is why "Baud=500" and "Baud=500000" both mean 500 kbit/s. Some
- * applications send the bit/s spelling, and reading only the kBaud one made every connection attempt
- * from them fail with ERR_CAN_BAUD_SET_NONSTANDARD.
- *
- * 666 kBaud is in the specification but the CANsub cannot generate it, so it is refused rather than
- * rounded to something the application did not ask for. */
-bool bitrate_from_text(const char *text, uint32_t &bitrate)
-{
-    const long value = atol(text);
-
-    if (value <= 0)
-    {
-        return false;
-    }
-
-    const uint32_t bits = (value <= 1000) ? ((uint32_t)value * 1000) : (uint32_t)value;
-
-    switch (bits)
-    {
-        case 125000:
-        case 250000:
-        case 500000:
-        case 1000000:
-        {
-            bitrate = bits;
-
-            return true;
-        }
-        default:
-        {
-            return false;
-        }
-    }
 }
 
 /* "Baud=Auto" on J1939, done honestly: listen at each candidate rate and take the first that
@@ -763,6 +671,21 @@ void write_timestamp(unsigned char *out, uint64_t us)
     out[3] = (unsigned char)(ticks);
 }
 
+/* Whether the device can generate the requested bit timing. A classic channel still sends a data
+ * phase, the same placeholder bus::open uses. */
+bool timing_possible(const connect_params_t &params)
+{
+    const bool fd = params.data_bitrate != 0;
+    bit_timing_t nominal;
+    bit_timing_t data;
+
+    return bit_timing_t::calculate(params.bitrate, params.sample_point,
+                                   fd ? params.data_bitrate : 1000000,
+                                   fd ? params.data_sample_point
+                                      : bit_timing_t::default_sample_point,
+                                   nominal, data);
+}
+
 } // namespace
 
 short connect_impl(HWND hwndClient, short nDeviceID, const char *fpchProtocol,
@@ -810,29 +733,41 @@ short connect_impl(HWND hwndClient, short nDeviceID, const char *fpchProtocol,
     const short baud_error = (protocol == protocol_t::j1939) ? ERR_J1939_BAUD_SET_NONSTANDARD
                                                              : ERR_CAN_BAUD_SET_NONSTANDARD;
 
-    /* A bare protocol name means 250k, the J1939 rate and the RP1210A-era CAN default. */
-    uint32_t bitrate = 250000;
-    bool autodetect = false;
-    char baud[16];
+    connect_params_t params;
+    std::string detail;
 
-    if (find_token(fpchProtocol, "Baud", baud, sizeof(baud)))
+    switch (parse_connect_params(fpchProtocol, protocol == protocol_t::j1939, params, detail))
     {
-        if (_stricmp(baud, "Auto") == 0)
+        case params_error_t::none:
         {
-            /* Only J1939 offers detection here, which is what CANAutoBaud=FALSE in the INI tells an
-             * application about the CAN protocol. */
-            if (protocol != protocol_t::j1939)
-            {
-                return ERR_CAN_BAUD_SET_NONSTANDARD;
-            }
-
-            autodetect = true;
+            break;
         }
-        else if (!bitrate_from_text(baud, bitrate))
+        case params_error_t::bad_baud:
         {
+            set_connect_error(detail);
+
             return baud_error;
         }
+        default:
+        {
+            /* The protocol string asks for something this protocol cannot do. */
+            set_connect_error(detail);
+
+            return ERR_INVALID_PROTOCOL;
+        }
     }
+
+    /* Refuse a bit timing the device cannot generate before touching the device. Baud=Auto picks
+     * from rates known to work, so it is checked once the probe has chosen. */
+    if (!params.autodetect && !timing_possible(params))
+    {
+        set_connect_error("the CANsub cannot generate this bit timing");
+
+        return baud_error;
+    }
+
+    uint32_t bitrate = params.bitrate;
+    const bool autodetect = params.autodetect;
 
     std::lock_guard<std::mutex> lock(table_mutex());
 
@@ -877,6 +812,10 @@ short connect_impl(HWND hwndClient, short nDeviceID, const char *fpchProtocol,
     client->channel = device.channel;
     client->config = config_t();
     client->config.bitrate = bitrate;
+    client->config.data_bitrate = params.data_bitrate;
+    client->config.sample_point = params.sample_point;
+    client->config.data_sample_point = params.data_sample_point;
+    client->config.listen_only = params.listen_only;
     client->config.error_frames = false;
     client->config.receive_own_messages = false;
     client->echo = false;
@@ -953,9 +892,14 @@ short connect_impl(HWND hwndClient, short nDeviceID, const char *fpchProtocol,
 
     client->connected = true;
 
-    RP1210_TRACE("ClientConnect -> client %d (host %s channel %d, %u bit/s, %s)", (int)id,
-                 client->host.c_str(), client->channel, client->config.bitrate,
-                 (protocol == protocol_t::j1939) ? "J1939" : "CAN");
+    RP1210_TRACE("ClientConnect -> client %d (host %s channel %d, %s, %u bit/s at %u.%02u%%, "
+                 "data %u bit/s at %u.%02u%%%s)",
+                 (int)id, client->host.c_str(), client->channel,
+                 (protocol == protocol_t::j1939) ? "J1939" : "CAN", client->config.bitrate,
+                 client->config.sample_point / 100, client->config.sample_point % 100,
+                 client->config.data_bitrate, client->config.data_sample_point / 100,
+                 client->config.data_sample_point % 100,
+                 client->config.listen_only ? ", listen only" : "");
 
     return id;
 }
@@ -1165,31 +1109,58 @@ short read_impl(short nClientID, unsigned char *fpchAPIMessage, short nBufferSiz
         return (short)pos;
     }
 
+    std::lock_guard<std::mutex> read_lock(client->read_mutex);
+
     /* An exclusive filter is applied here, so keep reading until something passes it. */
     for (;;)
     {
         frame_t frame;
-        const status_t result = client->can->recv(frame, timeout);
 
-        if (result == status_t::timeout)
+        if (client->held)
         {
-            return 0;
+            frame = client->held_frame;
+            client->held = false;
         }
-
-        if (result == status_t::disconnected)
+        else
         {
-            return -ERR_CLIENT_DISCONNECTED;
-        }
+            const status_t result = client->can->recv(frame, timeout);
 
-        if (!ok(result))
-        {
-            return -ERR_RX_QUEUE_CORRUPT;
+            if (result == status_t::timeout)
+            {
+                return 0;
+            }
+
+            if (result == status_t::disconnected)
+            {
+                return -ERR_CLIENT_DISCONNECTED;
+            }
+
+            if (!ok(result))
+            {
+                return -ERR_RX_QUEUE_CORRUPT;
+            }
         }
 
         /* Error frames have no RP1210 CAN representation, so they are counted and skipped rather
          * than fabricated into a data frame. GetHardwareStatus reports the bus state instead. */
         if (frame.is_error)
         {
+            continue;
+        }
+
+        /* Neither do CAN FD frames: the RP1210 CAN message has no FD or bit-rate-switch flag and
+         * at most 8 data bytes, so passing one on would misreport it as a classic frame. The device
+         * always runs in FD mode, so they can arrive on any channel. CANSUB_ReadXnetFrames
+         * delivers them. */
+        if (frame.fd)
+        {
+            if (client->fd_skipped++ == 0)
+            {
+                RP1210_TRACE("ReadMessage: client %d skips CAN FD frames, which RP1210 cannot "
+                             "represent (CANSUB_ReadXnetFrames delivers them)",
+                             (int)nClientID);
+            }
+
             continue;
         }
 
@@ -1205,6 +1176,11 @@ short read_impl(short nClientID, unsigned char *fpchAPIMessage, short nBufferSiz
 
         if (nBufferSize < needed)
         {
+            /* The frame stays for the next read, as on the J1939 path: an application that
+             * retries with a bigger buffer gets it, rather than losing it. */
+            client->held_frame = frame;
+            client->held = true;
+
             return -ERR_MESSAGE_TOO_LONG;
         }
 
@@ -1302,9 +1278,26 @@ uint64_t get_le(const unsigned char *in, int bytes)
     return value;
 }
 
+/* Whether len is a payload length CAN FD can carry: 0-8, 12, 16, 20, 24, 32, 48 or 64. */
+bool is_fd_length(uint8_t len)
+{
+    switch (len)
+    {
+        case 12: case 16: case 20: case 24: case 32: case 48: case 64:
+        {
+            return true;
+        }
+        default:
+        {
+            return len <= 8;
+        }
+    }
+}
+
 /* Reads one frame for sending, as XNET Convert (Signal to Frame Raw) produces them. Returns its size
- * in the buffer, or 0 if it is malformed or cannot be sent on a classic CAN channel. The timestamp
- * and flags of an outgoing frame mean nothing to the device and are ignored. */
+ * in the buffer, or 0 if it is malformed. Whether the channel can send it (an FD frame needs a data
+ * bit rate) is the caller's check. The timestamp and flags of an outgoing frame mean nothing to the
+ * device and are ignored. */
 long read_xnet_frame(const unsigned char *in, long available, frame_t &frame)
 {
     if (available < 24)
@@ -1322,9 +1315,11 @@ long read_xnet_frame(const unsigned char *in, long available, frame_t &frame)
         return 0;
     }
 
-    /* RP1210 connects in classic CAN, so CAN FD frames have nowhere to go, and other NI-XNET frame
-     * types (delays, triggers, bus errors) are not CAN frames at all. */
-    if ((type != xnet_type_can_data && type != xnet_type_can_remote) || len > 8)
+    /* Other NI-XNET frame types (delays, triggers, bus errors) are not CAN frames at all. */
+    const bool fd = (type == xnet_type_canfd_data || type == xnet_type_canfdbrs_data);
+
+    if (fd ? !is_fd_length(len)
+           : ((type != xnet_type_can_data && type != xnet_type_can_remote) || len > 8))
     {
         return 0;
     }
@@ -1334,6 +1329,8 @@ long read_xnet_frame(const unsigned char *in, long available, frame_t &frame)
     frame = frame_t{};
     frame.extended = (id & xnet_id_extended) != 0;
     frame.id = id & (frame.extended ? 0x1FFFFFFFu : 0x7FFu);
+    frame.fd = fd;
+    frame.brs = (type == xnet_type_canfdbrs_data);
     frame.rtr = (type == xnet_type_can_remote);
     frame.len = len;
 
@@ -1386,6 +1383,13 @@ long write_xnet_impl(short nClientID, const unsigned char *pBuffer, long nBuffer
         const long size = read_xnet_frame(pBuffer + pos, nBufferSize - pos, frame);
 
         if (size == 0)
+        {
+            return -ERR_MESSAGE_NOT_SENT; /* see note on E-only codes */
+        }
+
+        /* Refused up front, so the buffer is sent whole or not at all: a listen-only channel
+         * sends nothing, and an FD frame needs a channel connected with DataBaud=. */
+        if (client->config.listen_only || (frame.fd && client->config.data_bitrate == 0))
         {
             return -ERR_MESSAGE_NOT_SENT; /* see note on E-only codes */
         }
@@ -1454,6 +1458,8 @@ long read_xnet_impl(short nClientID, unsigned char *pBuffer, long nBufferSize, l
         return -ERR_MESSAGE_TOO_LONG;
     }
 
+    std::lock_guard<std::mutex> read_lock(client->read_mutex);
+
     long pos = 0;
     long count = 0;
 
@@ -1461,23 +1467,33 @@ long read_xnet_impl(short nClientID, unsigned char *pBuffer, long nBufferSize, l
     while (nBufferSize - pos >= CANSUB_XNET_FRAME_MAX)
     {
         frame_t frame;
-        const status_t result = client->can->recv(frame, 0);
 
-        if (result == status_t::timeout)
+        /* A frame RP1210_ReadMessage held back for a bigger buffer comes first. */
+        if (client->held)
         {
-            break;
+            frame = client->held_frame;
+            client->held = false;
         }
-
-        /* Frames already written are delivered first; the next call reports the failure. */
-        if (!ok(result))
+        else
         {
-            if (pos > 0)
+            const status_t result = client->can->recv(frame, 0);
+
+            if (result == status_t::timeout)
             {
                 break;
             }
 
-            return (result == status_t::disconnected) ? -ERR_CLIENT_DISCONNECTED
-                                                      : -ERR_RX_QUEUE_CORRUPT;
+            /* Frames already written are delivered first; the next call reports the failure. */
+            if (!ok(result))
+            {
+                if (pos > 0)
+                {
+                    break;
+                }
+
+                return (result == status_t::disconnected) ? -ERR_CLIENT_DISCONNECTED
+                                                          : -ERR_RX_QUEUE_CORRUPT;
+            }
         }
 
         if (frame.is_error || blocked(*client, frame))
@@ -1737,6 +1753,14 @@ short command_impl(short nCommandNumber, short nClientID,
         {
             client->can->flush();
 
+            /* A read blocked on another thread owns the held frame; it is not waited for. */
+            std::unique_lock<std::mutex> read_lock(client->read_mutex, std::try_to_lock);
+
+            if (read_lock.owns_lock())
+            {
+                client->held = false;
+            }
+
             return RP1210_NO_ERRORS;
         }
 
@@ -1767,6 +1791,20 @@ short command_impl(short nCommandNumber, short nClientID,
             const uint32_t bitrate = bitrate_from_baud_id(fpchClientCommand[1]);
 
             if (bitrate == 0)
+            {
+                return ERR_CAN_BAUD_SET_NONSTANDARD;
+            }
+
+            /* Check first: a rate the device cannot generate with the client's other timing
+             * settings (a data rate below it, say) must not cost the application its channel. */
+            connect_params_t params;
+
+            params.bitrate = bitrate;
+            params.sample_point = client->config.sample_point;
+            params.data_bitrate = client->config.data_bitrate;
+            params.data_sample_point = client->config.data_sample_point;
+
+            if (!timing_possible(params))
             {
                 return ERR_CAN_BAUD_SET_NONSTANDARD;
             }

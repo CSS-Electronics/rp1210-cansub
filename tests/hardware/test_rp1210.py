@@ -179,15 +179,33 @@ def test_connect_baud_spellings(driver, protocol, speed):
         driver.disconnect(cid)
 
 
+@pytest.mark.parametrize("protocol,speed", [
+    (b"CAN:Baud=800", "800"),
+    (b"CAN:Baud=83333", "83"),
+    (b"CAN:Baud=333333", "333"),
+])
+def test_connect_any_rate_the_device_can_produce(driver, protocol, speed):
+    """Not only the four RP1210 rates: any rate the device generates within 0.1 % is accepted."""
+    cid = driver.connect(protocol=protocol)
+
+    assert 0 <= cid <= 127, f"{protocol!r}: {cid} {driver.error_text(cid)}"
+
+    try:
+        assert driver.connection_speed(cid) == (NO_ERRORS, speed)
+    finally:
+        driver.disconnect(cid)
+
+
 def test_connect_rejects_rates_the_device_cannot_produce(driver):
-    """666 kBaud is in the specification but the CANsub cannot generate it.
+    """666 kBaud is in the specification but the CANsub cannot generate it within 0.1 %.
 
     Refused rather than rounded to 500 or 1000: an application that asked for 666 and silently got
     something else would see a bus that does not work and no reason for it.
     """
     refuses(driver, ERR_CAN_BAUD_SET_NONSTANDARD, protocol=b"CAN:Baud=666")
     refuses(driver, ERR_CAN_BAUD_SET_NONSTANDARD, protocol=b"CAN:Baud=666000")
-    refuses(driver, ERR_CAN_BAUD_SET_NONSTANDARD, protocol=b"CAN:Baud=333333")
+    refuses(driver, ERR_CAN_BAUD_SET_NONSTANDARD, protocol=b"CAN:Baud=777777")
+    refuses(driver, ERR_CAN_BAUD_SET_NONSTANDARD, protocol=b"CAN:Baud=2000000")
     refuses(driver, ERR_CAN_BAUD_SET_NONSTANDARD, protocol=b"CAN:Baud=0")
 
 
@@ -675,12 +693,13 @@ def test_xnet_write_round_trip_with_echo(driver, client, ch2):
 
 
 def test_xnet_write_refuses_without_sending(driver, client, ch2):
-    """A malformed buffer, CAN FD, or a classic payload over 8 bytes sends nothing at all."""
+    """A malformed buffer, CAN FD on a classic client (no DataBaud=), or a classic payload over 8
+    bytes sends nothing at all."""
     good = build_xnet(0x100, b"\x01")
 
     cases = [
         good + good[:10],                                                # truncated second frame
-        good + build_xnet(0x101, bytes(12), ftype=XNET_TYPE_CANFD_DATA),  # CAN FD
+        good + build_xnet(0x101, bytes(12), ftype=XNET_TYPE_CANFD_DATA),  # CAN FD, classic client
         good + build_xnet(0x102, bytes(8), length=9)[:24],               # classic, length over 8
         good + build_xnet(0x103, b"\x01", ftype=0x02),                   # not a CAN frame type
     ]

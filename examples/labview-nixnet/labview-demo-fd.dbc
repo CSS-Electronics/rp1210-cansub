@@ -1,0 +1,40 @@
+VERSION ""
+
+NS_ :
+ BA_DEF_
+ BA_
+ BA_DEF_DEF_
+
+BS_:
+
+BU_: RIG LABVIEW
+
+BO_ 2566868993 RigStatusFd: 64 RIG
+ SG_ EngineSpeed : 0|16@1+ (0.25,0) [0|8000] "rpm" Vector__XXX
+ SG_ EngineTorque : 16|16@1+ (0.1,-500) [-500|1500] "Nm" Vector__XXX
+ SG_ CoolantTemp : 32|8@1+ (1,-40) [-40|150] "degC" Vector__XXX
+ SG_ VehicleSpeed : 40|16@1+ (0.01,0) [0|250] "km/h" Vector__XXX
+ SG_ BatteryVoltage : 56|16@1+ (0.001,0) [0|32] "V" Vector__XXX
+ SG_ CellVoltage1 : 128|16@1+ (0.001,0) [0|5] "V" Vector__XXX
+ SG_ CellVoltage2 : 144|16@1+ (0.001,0) [0|5] "V" Vector__XXX
+ SG_ CellVoltage3 : 160|16@1+ (0.001,0) [0|5] "V" Vector__XXX
+ SG_ CellVoltage4 : 176|16@1+ (0.001,0) [0|5] "V" Vector__XXX
+ SG_ PackTemp : 496|8@1+ (1,-40) [-40|150] "degC" Vector__XXX
+
+BO_ 2566873089 RigCommandFd: 12 LABVIEW
+ SG_ TargetSpeed : 0|16@1+ (0.25,0) [0|8000] "rpm" RIG
+ SG_ Enable : 16|1@1+ (1,0) [0|1] "" RIG
+ SG_ TargetTorque : 32|16@1+ (0.1,-500) [-500|1500] "Nm" RIG
+ SG_ FanDuty : 64|8@1+ (0.5,0) [0|100] "%" RIG
+
+BA_DEF_  "BusType" STRING ;
+BA_DEF_ BO_  "VFrameFormat" ENUM  "StandardCAN","ExtendedCAN","reserved","J1939PG","reserved","reserved","reserved","reserved","reserved","reserved","reserved","reserved","reserved","reserved","StandardCAN_FD","ExtendedCAN_FD";
+BA_DEF_ BO_  "CANFD_BRS" ENUM  "0","1";
+BA_DEF_DEF_  "BusType" "CAN FD";
+BA_DEF_DEF_  "VFrameFormat" "StandardCAN";
+BA_DEF_DEF_  "CANFD_BRS" "1";
+BA_ "BusType" "CAN FD";
+BA_ "VFrameFormat" BO_ 2566868993 15;
+BA_ "VFrameFormat" BO_ 2566873089 15;
+BA_ "CANFD_BRS" BO_ 2566868993 1;
+BA_ "CANFD_BRS" BO_ 2566873089 1;

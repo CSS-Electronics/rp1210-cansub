@@ -87,7 +87,8 @@ short WINAPI RP1210_Ioctl(short nClientID, long nIoctlID, void *pInput, void *pO
  *
  * For LabVIEW with NI-XNET: drains every CAN frame already received on a generic CAN client into
  * pBuffer in NI-XNET's raw frame format, which "XNET Convert (Frame Raw to Signal)" decodes with a
- * DBC directly. That keeps byte unpacking out of the LabVIEW diagram. Never blocks.
+ * DBC directly. That keeps byte unpacking out of the LabVIEW diagram. Never blocks. Delivers CAN FD
+ * frames too (types CAN FD and CAN FD+BRS), which RP1210_ReadMessage skips.
  *
  * Returns the number of bytes written (0 when nothing is queued) and the frame count in
  * *pFrameCount (may be NULL), or a negative RP1210 error code. nBufferSize must be at least
@@ -99,8 +100,9 @@ long WINAPI CANSUB_ReadXnetFrames(short nClientID, unsigned char *pBuffer, long 
 
 /* CSS Electronics extension, the mirror of CANSUB_ReadXnetFrames: sends the frames in pBuffer, given
  * in NI-XNET's raw frame format as "XNET Convert (Signal to Frame Raw)" produces them, so LabVIEW
- * can send by DBC signal name. Generic CAN clients only; classic CAN data and remote frames only.
- * Timestamps and flags in the buffer are ignored.
+ * can send by DBC signal name. Generic CAN clients only. Classic CAN data and remote frames, and
+ * CAN FD frames (with or without bit rate switch) on a client connected with DataBaud=. Timestamps
+ * and flags in the buffer are ignored. A listen-only client (ListenOnly=1) sends nothing.
  *
  * Returns the number of frames sent (also in *pFrameCount, which may be NULL), or a negative RP1210
  * error code. A malformed buffer sends nothing. If a send fails part-way, *pFrameCount holds the

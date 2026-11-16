@@ -33,6 +33,7 @@ Binaries land in `build\x64\` (or `build\x86\`).
 | `test_glue` | Conversions between libcansub and the SDK: frames, error types, result codes, hosts, API version, bit timing |
 | `test_mdns` | mDNS parsing, including malformed and hostile input |
 | `test_j1939` | J1939 identifiers, transport protocol and address claim, driven by an injected clock |
+| `test_connect_params` | The `RP1210_ClientConnect` protocol string: bit rates, CAN FD and sample point options, listen-only |
 
 **Hardware tests** need a CANsub with CH1 and CH2 wired together (terminated), running a firmware with API 05.00:
 

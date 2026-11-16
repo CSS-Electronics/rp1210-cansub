@@ -101,7 +101,7 @@ def driver(pytestconfig, build_dir, ini_pointed_at_device):
     return Driver(path)
 
 
-def open_bus(host, channel, bitrate=250000, attempts=6, delay=0.4):
+def open_bus(host, channel, bitrate=250000, attempts=6, delay=0.4, data_bitrate=None):
     """Opens a python-can-cansub bus, retrying while the device frees a socket.
 
     The device permits one WebSocket per channel and takes a moment to release it after a close.
@@ -111,7 +111,9 @@ def open_bus(host, channel, bitrate=250000, attempts=6, delay=0.4):
 
     for _ in range(attempts):
         try:
-            return can.Bus(interface="cansub", channel=f"{host}@{channel}", bitrate=bitrate)
+            kwargs = {"data_bitrate": data_bitrate} if data_bitrate else {}
+            return can.Bus(interface="cansub", channel=f"{host}@{channel}", bitrate=bitrate,
+                           **kwargs)
         except Exception as exc:  # noqa: BLE001 - python-can wraps several transport errors
             last = exc
             time.sleep(delay)

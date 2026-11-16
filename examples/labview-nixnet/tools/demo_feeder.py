@@ -9,6 +9,11 @@ prints the decoded RigCommand values it receives whenever they change, so you ca
 the VI sends.
 
   python tools\\demo_feeder.py --address <device-id>-usb.local --channel 2 --bitrate 500000 --dbc labview-demo.dbc
+
+For CAN FD, add the data bit rate. Messages the DBC marks as CAN FD are then sent as FD frames with
+bit rate switch:
+
+  python tools\\demo_feeder.py --address <device-id>-usb.local --channel 2 --bitrate 500000 --data-bitrate 2000000 --dbc labview-demo-fd.dbc
 """
 import argparse
 import math
@@ -29,6 +34,7 @@ def main():
     ap.add_argument("--address", required=True)
     ap.add_argument("--channel", type=int, default=2)
     ap.add_argument("--bitrate", type=int, default=500_000)
+    ap.add_argument("--data-bitrate", type=int, default=None, help="CAN FD data bit rate, e.g. 2000000")
     ap.add_argument("--dbc", required=True)
     ap.add_argument("--period", type=float, default=0.02, help="seconds between frame bursts (default 50 Hz)")
     a = ap.parse_args()
@@ -37,7 +43,12 @@ def main():
     tx = [m for m in db.messages if "LABVIEW" not in m.senders]
     rx = {m.frame_id: m for m in db.messages if "LABVIEW" in m.senders}
     print(f"Transmitting {len(tx)} messages every {a.period}s on {a.address} CH{a.channel}. Ctrl+C to stop.")
-    with can.Bus(interface="cansub", address=a.address, channel=a.channel, bitrate=a.bitrate) as bus:
+    fd = [m.name for m in tx if m.is_fd]
+    if fd and not a.data_bitrate:
+        raise SystemExit(f"{', '.join(fd)} are CAN FD messages: add --data-bitrate")
+    fd_args = {"data_bitrate": a.data_bitrate} if a.data_bitrate else {}
+    with can.Bus(interface="cansub", address=a.address, channel=a.channel, bitrate=a.bitrate,
+                 **fd_args) as bus:
         t0 = time.time()
         last = {}
         try:
@@ -52,7 +63,7 @@ def main():
                     vals = {s.name: value(s, t, i + j * 0.7) for j, s in enumerate(msg.signals)}
                     data = msg.encode(vals, strict=False)
                     bus.send(can.Message(arbitration_id=msg.frame_id, is_extended_id=msg.is_extended_frame,
-                                         data=data))
+                                         data=data, is_fd=msg.is_fd, bitrate_switch=msg.is_fd))
                 time.sleep(a.period)
         except KeyboardInterrupt:
             pass

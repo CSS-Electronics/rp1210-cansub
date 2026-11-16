@@ -71,6 +71,16 @@ struct client_t
 
     short last_error = RP1210_NO_ERRORS;
 
+    /* CAN clients only. A frame taken from the bus that did not fit the application's buffer is
+     * held for the next read rather than lost; read_mutex serialises the reads that share it. */
+    std::mutex read_mutex;
+    bool held = false;
+    cansub::frame_t held_frame;
+
+    /* CAN FD frames have no RP1210 representation, so RP1210_ReadMessage skips them (the XNET read
+     * delivers them). Counted for the trace. */
+    uint64_t fd_skipped = 0;
+
     /* J1939 only. The engine holds the transport protocol and address claim state machines; the
      * worker thread owns the bus for the lifetime of the client and is the only thing that calls
      * send and recv on it.

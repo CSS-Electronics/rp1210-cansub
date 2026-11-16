@@ -17,17 +17,23 @@ struct bit_timing_t
     uint32_t seg2 = 0;
     uint32_t sjw = 0;
 
-    /* Nominal timing for a bit rate at the device's default 80% sample point, computed by the SDK
-     * (cansub_calculate_bittiming). Returns false for a rate the device cannot produce.
+    /* The device's default sample point, in the SDK's 0.01 % units (8000 = 80 %). */
+    static constexpr uint32_t default_sample_point = 8000;
+
+    /* Nominal and data-phase timing for a channel, computed together by the SDK
+     * (cansub_calculate_bittiming). Sample points are in 0.01 % units. Returns false when either
+     * rate cannot be produced within 0.1 %, a sample point is above 100 %, or the data rate is below
+     * the nominal one.
+     *
+     * The device always runs in FD mode, so the phy endpoint needs a data phase even for classic
+     * CAN; the caller picks one in that case.
      *
      * The SDK picks the smallest prescaler, so the registers differ from the device's factory
      * values at the same bit rate and sample point: 250 kbit/s gives {1, 255, 64, 64}, while
      * GET /api/can/{n}/phy reports {4, 63, 16, 16} out of the box. Both are valid and interoperate. */
-    static bool from_bitrate(uint32_t bitrate, bit_timing_t &timing);
-
-    /* Data-phase timing for CAN FD, from the same SDK calculator. The classic-CAN path still has to
-     * send a data block, since the phy endpoint requires it. */
-    static bool data_from_bitrate(uint32_t bitrate, bit_timing_t &timing);
+    static bool calculate(uint32_t nominal_bitrate, uint32_t nominal_sample_point,
+                          uint32_t data_bitrate, uint32_t data_sample_point,
+                          bit_timing_t &nominal, bit_timing_t &data);
 
     uint32_t bitrate() const
     {

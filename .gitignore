@@ -11,6 +11,9 @@ __pycache__/
 # A copy of the driver placed beside the LabVIEW example for local use.
 examples/labview-nixnet/CANSUB32.dll
 examples/labview-nixnet/CANSUB32.ini
+examples/labview-nixnet/library/cansub_lv32.dll
+examples/labview-nixnet/library/cansub_lv64.dll
+examples/labview-nixnet/library/CANSUB32.ini
 
 # Local maintainer and agent notes.
 CLAUDE.md

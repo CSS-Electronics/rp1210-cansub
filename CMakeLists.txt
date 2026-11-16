@@ -14,7 +14,7 @@ cmake_minimum_required(VERSION 3.27)
 # the SDK's targets pick it up too.
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-project(rp1210_cansub VERSION 0.1.0 LANGUAGES C CXX)
+project(rp1210_cansub VERSION 0.2.0 LANGUAGES C CXX)
 
 if(NOT WIN32)
     message(FATAL_ERROR "The RP1210 driver is Windows only (RP1210 is a Windows API, and libcansub uses Winsock).")
@@ -86,6 +86,7 @@ target_link_libraries(libcansub_internal INTERFACE libcansub cansub::cansub)
 add_library(rp1210_driver SHARED
     src/rp1210_api.cpp
     src/client.cpp
+    src/connect_params.cpp
     src/ini.cpp
     src/j1939.cpp
     src/trace.cpp
@@ -153,6 +154,11 @@ add_test(NAME test_mdns COMMAND test_mdns)
 add_executable(test_j1939 tests/unit/test_j1939.cpp src/j1939.cpp)
 target_include_directories(test_j1939 PRIVATE src)
 add_test(NAME test_j1939 COMMAND test_j1939)
+
+# The connect-string parser is free of libcansub and of the device too.
+add_executable(test_connect_params tests/unit/test_connect_params.cpp src/connect_params.cpp)
+target_include_directories(test_connect_params PRIVATE src)
+add_test(NAME test_connect_params COMMAND test_connect_params)
 
 # Needs a CANsub with CH1 and CH2 wired together: test_bus [host]. Not registered with CTest.
 add_executable(test_bus tests/hardware/test_bus.cpp)

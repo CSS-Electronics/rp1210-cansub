@@ -3,9 +3,10 @@
 An RP1210 driver DLL (`CANSUB32.dll`, 32-bit and 64-bit) for the CANsub CAN interfaces by CSS Electronics ([CANsub.2](https://www.csselectronics.com/products/can-fd-usb-interface-ethernet-cansub-2), [CANsub.4](https://www.csselectronics.com/products/can-bus-interface-usb-ethernet-cansub-4)). It lets Windows diagnostic and service tools that support RP1210 use a CANsub as their CAN gateway, over USB or Ethernet.
 
 - Generic **CAN** and **J1939**, including the J1939 transport protocol (up to 1785 bytes) and address claim
+- **CAN FD** with any bit rates and sample points the CANsub supports, for LabVIEW and other applications that use the NI-XNET frame exports (RP1210 itself has no CAN FD)
 - Finds the attached CANsub automatically (mDNS), so one INI works on every machine
 - Built on the official [C/C++ SDK for CANsub](https://github.com/CSS-Electronics/c-cpp-sdk-cansub)
-- Includes a [LabVIEW example](examples/labview-nixnet/) that reads and sends CAN signals by DBC name via NI-XNET
+- Includes a [LabVIEW example and wrapper library](examples/labview-nixnet/) that read and send CAN and CAN FD signals by DBC name via NI-XNET
 
 ## Quick start
 
@@ -33,7 +34,17 @@ No build needed.
 
 - DeviceID 1-4 are CAN channels 1-4 of the first CANsub found (in device-id order), 5-8 of the second, up to four devices.
 - With several devices on a shared network, that order changes when devices come and go. Pin a DeviceID to one device in `CANSUB32.ini` instead, e.g. `DeviceParams=host=97622d1f-eth.local,channel=1` (or its IP address). This also works where mDNS is blocked.
-- Bit rates: 125, 250, 500 and 1000 kbit/s (`CAN:Baud=500` or `CAN:Baud=500000`). `J1939:Baud=Auto` needs traffic on the bus.
+- Bit rates: 125, 250, 500 and 1000 kbit/s (`CAN:Baud=500` or `CAN:Baud=500000`), or any other rate up to 1 Mbit/s that the CANsub generates within 0.1 % (e.g. `CAN:Baud=800`). `J1939:Baud=Auto` needs traffic on the bus.
+- Optional settings after the bit rate. Without them a channel is classic CAN at an 80 % sample point, as RP1210 applications expect:
+
+  | Option | Example | What |
+  |---|---|---|
+  | `DataBaud=` | `CAN:Baud=500,DataBaud=2000` | CAN FD data bit rate, in kbit/s up to 10000, otherwise in bit/s. CAN only |
+  | `SamplePoint=` | `CAN:Baud=500,SamplePoint=87.5` | Nominal sample point in percent (default 80) |
+  | `DataSamplePoint=` | `CAN:Baud=1000,DataBaud=4000,DataSamplePoint=75` | Data-phase sample point in percent (default 80). Needs `DataBaud=` |
+  | `ListenOnly=` | `CAN:Baud=500,ListenOnly=1` | Receive only: the channel sends no acknowledgements and no frames. CAN only |
+
+- CAN FD frames are read and sent with `CANSUB_ReadXnetFrames` and `CANSUB_WriteXnetFrames` (see the [LabVIEW example](examples/labview-nixnet/)). `RP1210_ReadMessage` skips them, since the RP1210 message format cannot mark a frame as CAN FD.
 
 ## Troubleshooting
 
@@ -79,7 +90,8 @@ third_party/c-cpp-sdk-cansub/  the official SDK (git submodule), unmodified
 ## Limitations
 
 - Windows only
-- Generic CAN and J1939 only (no ISO15765 or CAN FD)
+- Generic CAN and J1939 only (no ISO15765)
+- CAN FD only through the NI-XNET frame exports, and no J1939 over CAN FD
 - One client per CAN channel: Close webCAN or other tools on that channel first
 - mTLS is not supported
 

@@ -2,6 +2,7 @@
 
 Run with a Python that has nixnet installed:
   python tools/xnet_raw_test.py --dbc labview-demo.dbc --device 1 --baud 500 --seconds 6
+  python tools/xnet_raw_test.py --dbc labview-demo-fd.dbc --device 1 --protocol CAN:Baud=500,DataBaud=2000
 """
 import argparse, ctypes, os, sys, time
 from ctypes import POINTER, byref, c_char_p, c_long, c_short, c_void_p, create_string_buffer
@@ -14,8 +15,10 @@ ap.add_argument("--dll", default=os.path.join(os.path.dirname(__file__), "..", "
 ap.add_argument("--dbc", required=True)
 ap.add_argument("--device", type=int, default=1)
 ap.add_argument("--baud", type=int, default=500)
+ap.add_argument("--protocol", default=None, help="full connect string, overrides --baud")
 ap.add_argument("--seconds", type=float, default=6)
 a = ap.parse_args()
+protocol = a.protocol or f"CAN:Baud={a.baud}"
 
 dll = ctypes.WinDLL(os.path.abspath(a.dll))
 dll.RP1210_ClientConnect.argtypes = [c_void_p, c_short, c_char_p, c_long, c_long, c_short]
@@ -34,7 +37,7 @@ with database.Database(os.path.abspath(a.dbc)) as db:
         for fk in cl.frames:
             signals += [f"{fk}.{sk}" for sk in cl.frames[fk].mux_static_signals]
 
-client = dll.RP1210_ClientConnect(None, a.device, f"CAN:Baud={a.baud}".encode(), 0, 0, 0)
+client = dll.RP1210_ClientConnect(None, a.device, protocol.encode(), 0, 0, 0)
 if client < 0 or client > 127:
     sys.exit(f"ClientConnect failed: {client}")
 try:

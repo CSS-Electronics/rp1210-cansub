@@ -1,6 +1,8 @@
 # LabVIEW example: CANsub + NI-XNET, read and send by DBC signal
 
-A LabVIEW VI that reads and sends CAN signals by DBC name through a CANsub, using the RP1210 driver and NI's free NI-XNET driver for the DBC encoding (no NI hardware needed). No Python, no webCAN, no byte packing in LabVIEW.
+A LabVIEW VI that reads and sends CAN and CAN FD signals by DBC name through a CANsub, using the RP1210 driver and NI's free NI-XNET driver for the DBC encoding (no NI hardware needed). No Python, no webCAN, no byte packing in LabVIEW.
+
+The [`library/`](library/) folder adds `cansub_rp1210.lvlib`, a LabVIEW wrapper for every function of the driver DLL, for building your own VIs.
 
 ```
 CANsub <--> CANSUB32.dll <--> LabVIEW VI <--> NI-XNET Conversion sessions (DBC) <--> signal values
@@ -15,9 +17,10 @@ long WINAPI CANSUB_WriteXnetFrames(short nClientID, const unsigned char *pBuffer
 
 - Use them on a generic CAN client (`CAN:Baud=...`). J1939 clients get `ERR_INVALID_PROTOCOL`. `pFrameCount` may be NULL.
 - `CANSUB_ReadXnetFrames` replaces `RP1210_ReadMessage` (set filters first). It never blocks: It returns the bytes written, 0 when nothing is waiting, or a negative RP1210 error code. The buffer must hold at least 80 bytes (one CAN FD frame); 64 KB per call is plenty. Timestamps are NI-XNET's (100 ns since 1601 UTC). With echo on, own frames carry NI-XNET's transmit-echo flag.
-- `CANSUB_WriteXnetFrames` sends the frames in the buffer as XNET Convert (Signal to Frame Raw) produces them. It returns the number of frames sent or a negative RP1210 error code. It checks the whole buffer first and sends nothing if a frame is malformed or not classic CAN (data or remote, up to 8 bytes).
+- `CANSUB_WriteXnetFrames` sends the frames in the buffer as XNET Convert (Signal to Frame Raw) produces them. It returns the number of frames sent or a negative RP1210 error code. It checks the whole buffer first and sends nothing if a frame is malformed, if it is a CAN FD frame on a client connected without `DataBaud=`, or if the client is listen-only.
+- CAN FD: connect with a data bit rate, e.g. `CAN:Baud=500,DataBaud=2000`. Both functions then carry CAN FD frames (NI-XNET types CAN FD and CAN FD+BRS, up to 64 bytes). See the main [README](../../README.md#devices-and-bit-rates) for all connect options.
 
-Status: Early stage. Verified with LabVIEW 2026 Q3 (64-bit) and NI-XNET 26.3. 32-bit LabVIEW, LabVIEW 2021 itself and CAN FD are untested.
+Status: Early stage. Verified with LabVIEW 2026 Q3 (64-bit) and NI-XNET 26.3, classic CAN and CAN FD (500k/2M and 1M/4M). 32-bit LabVIEW and LabVIEW 2020/2021 themselves are untested.
 
 ## Files
 
@@ -25,8 +28,10 @@ Status: Early stage. Verified with LabVIEW 2026 Q3 (64-bit) and NI-XNET 26.3. 32
 |---|---|
 | `cansub_rp1210_xnet.vi` | The example VI (LabVIEW 2026) |
 | `cansub_rp1210_xnet_lv2021.vi` | Same VI saved for LabVIEW 2021 |
-| `rp1210_labview.h` | The DLL functions the VI uses, as a C header for LabVIEW's import wizard |
+| `rp1210_labview.h` | The DLL functions as a C header for LabVIEW's Import Shared Library wizard, which made `library/` |
 | `labview-demo.dbc` | Demo DBC, 500 kbit/s: `EngineData` (0x100) and `VehicleData` (0x101) from the rig, `RigCommand` (0x200) from LabVIEW |
+| `labview-demo-fd.dbc` | Demo DBC for CAN FD, 500k/2M, 29-bit identifiers: `RigStatusFd` (0x18FF5001, 64 bytes) from the rig, `RigCommandFd` (0x18FF6001, 12 bytes) from LabVIEW |
+| `library/` | `cansub_rp1210.lvlib`, the LabVIEW wrapper library (saved in LabVIEW 2020), see below |
 | `tools/xnet_raw_test.py` | The same calls in Python, to check the DLL and NI-XNET without LabVIEW |
 | `tools/demo_feeder.py` | Optional demo rig on another CANsub channel: Sends `EngineData` and `VehicleData`, prints the `RigCommand` values it receives |
 
@@ -56,6 +61,8 @@ The driver needs no installation for this: The VI loads `CANSUB32.dll` from its 
 4. Switch `Send` on to send every `Send period (s)`. `Frames sent` shows the result of the last send. Values you change while running go out with the next send.
 5. Press STOP to disconnect and release the channel.
 
+For CAN FD, run the demo rig with `--bitrate 500000 --data-bitrate 2000000 --dbc labview-demo-fd.dbc`, and in the VI set `Protocol` to `CAN:Baud=500,DataBaud=2000`, `DBC file` to `labview-demo-fd.dbc`, `Signals` to e.g. `RigStatusFd.EngineSpeed` and `RigStatusFd.CellVoltage4`, and `Send signals` to e.g. `RigCommandFd.TargetSpeed`. The VI itself needs no change: NI-XNET takes CAN FD from the DBC.
+
 Only send frames that no other node on the bus sends, such as `RigCommand` in the demo.
 
 To check without LabVIEW (`pip install nixnet`): `python tools\xnet_raw_test.py --dbc labview-demo.dbc --device 1 --baud 500`
@@ -68,8 +75,9 @@ To check without LabVIEW (`pip install nixnet`): `python tools\xnet_raw_test.py 
 | `Client ID` 135 | Channel in use: Close webCAN or any other client on that channel |
 | `Client ID` 134 | No device for that Device ID |
 | Values stay 0 | No traffic, wrong bit rate, or signal names not given as `Frame.Signal` |
-| `Frames sent` negative | An RP1210 error code, negated. 159: Nothing sent |
-| LabVIEW cannot find the library | `CANSUB32.dll` is not beside the VI, or its bitness does not match LabVIEW |
+| `Frames sent` negative | An RP1210 error code, negated. 159: Nothing sent, e.g. a CAN FD frame without `DataBaud=` in `Protocol`, or a listen-only client |
+| `Client ID` 454 | The CANsub cannot generate that bit rate and sample point, or the data rate is below the nominal one |
+| LabVIEW cannot find the library | `CANSUB32.dll` is not beside the VI, or its bitness does not match LabVIEW. For `library/`: `cansub_lv32.dll` / `cansub_lv64.dll` are missing beside the `.lvlib` |
 
 A `Client ID` above 127 is an RP1210 error code. A negative `Bytes read` is the same code, negated.
 
@@ -92,6 +100,27 @@ Each node has **Specify path on diagram** ticked and gets `CANSUB32.dll` beside 
    - Read frames (`size` 65536, returns bytes written), **Array Subset** of the buffer to that length, then **XNET Convert (Frame Raw to Signal)**.
    - **Elapsed Time** (auto reset, target `Send period (s)`) AND `Send` selects a Case structure. Its True case runs **XNET Convert (Signal to Frame Raw)** on `Send values`, then Send frames with the frame bytes and their **Array Size**.
 3. **After the loop:** Disconnect, **XNET Clear**, Simple Error Handler. The send session is cleared automatically when the VI stops.
+
+## LabVIEW library
+
+`library/cansub_rp1210.lvlib` wraps every function of the driver DLL in a VI with the same name and parameters, generated with LabVIEW's Import Shared Library wizard. Saved in LabVIEW 2020, so it opens in LabVIEW 2020 and later, 32-bit and 64-bit.
+
+| VI | Function |
+|---|---|
+| `RP1210 Client Connect.vi` | Connect a client: `nDeviceID` (1 = first CANsub CH1) and `fpchProtocol` (e.g. `CAN:Baud=500,DataBaud=2000`). Returns the client ID (0 to 127) or an error code (above 127) |
+| `RP1210 Client Disconnect.vi` | Release the channel |
+| `RP1210 Send Command.vi` | RP1210 commands, e.g. command 3 (all filters pass, needed before anything is received) |
+| `CANSUB Read Xnet Frames.vi` | Received CAN and CAN FD frames in NI-XNET raw format, for XNET Convert (Frame Raw to Signal). Use the first `function return` bytes of `pBuffer` |
+| `CANSUB Write Xnet Frames.vi` | Send frames in NI-XNET raw format from XNET Convert (Signal to Frame Raw). Wire the array's size to `nBufferSize` |
+| `RP1210 Read Message.vi`, `RP1210 Send Message.vi` | Classic CAN frames in the RP1210 layout, for RP1210-style code |
+| `RP1210 Get Error Msg.vi`, `RP1210 Get Last Error Msg.vi` | Text for an RP1210 error code |
+| `RP1210 Read Version.vi`, `RP1210 Read Detailed Version.vi`, `RP1210 Get Hardware Status.vi` | Driver, API and device information |
+
+The VIs pass `error in` to `error out` and skip the call on an incoming error. The return values are RP1210's: check them as the table above describes.
+
+The VIs load `cansub_lv32.dll` or `cansub_lv64.dll` beside the library, picked by LabVIEW's own bitness (the library path is `cansub_lv*.*`). Both are the RP1210 driver under another name. The release zip has them, with `CANSUB32.ini`. When building from source, `build.bat` puts them in `dist\examples\labview-nixnet\library\`.
+
+A typical VI: Client Connect, then Send Command 3, then in a loop Read Xnet Frames into XNET Convert (Frame Raw to Signal) and XNET Convert (Signal to Frame Raw) into Write Xnet Frames, then Client Disconnect. The example VI above shows the XNET part.
 
 ## Planned
 

@@ -80,6 +80,13 @@ xcopy /e /i /q /y "%ROOT%examples\labview-nixnet" "%LV%" >nul || exit /b 1
 copy /y "%ROOT%build\x64\CANSUB32.dll"            "%LV%\" >nul || exit /b 1
 copy /y "%ROOT%ini\CANSUB32.ini"                  "%LV%\" >nul || exit /b 1
 
+rem The LabVIEW library loads cansub_lv*.dll: LabVIEW replaces the * with 32 or 64 to match its own
+rem bitness, so both builds of the driver go beside it under those names. The DLL reads CANSUB32.ini
+rem from its own folder whatever the DLL is called.
+copy /y "%ROOT%build\x86\CANSUB32.dll"            "%LV%\library\cansub_lv32.dll" >nul || exit /b 1
+copy /y "%ROOT%build\x64\CANSUB32.dll"            "%LV%\library\cansub_lv64.dll" >nul || exit /b 1
+copy /y "%ROOT%ini\CANSUB32.ini"                  "%LV%\library\" >nul || exit /b 1
+
 rem The DLL contains the SDK's third-party code (mbedTLS, picohttpparser, parts of Zephyr), whose
 rem licences require their notices to travel with it.
 copy /y "%SDK%\THIRD_PARTY_NOTICES.md"            "%DIST%\THIRD_PARTY_NOTICES.txt" >nul || exit /b 1

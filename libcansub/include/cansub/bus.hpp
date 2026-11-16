@@ -39,8 +39,13 @@ struct config_t
 {
     uint32_t bitrate = 250000;
 
-    /* Non-zero switches the channel to CAN FD. */
+    /* CAN FD data-phase bit rate. Non-zero allows sending FD frames; 0 is a classic CAN channel.
+     * The device always runs in FD mode, so FD frames on the bus are received either way. */
     uint32_t data_bitrate = 0;
+
+    /* Sample points in 0.01 % units (8000 = 80 %). */
+    uint32_t sample_point = bit_timing_t::default_sample_point;
+    uint32_t data_sample_point = bit_timing_t::default_sample_point;
 
     bool listen_only = false;
     bool auto_reset = true;
@@ -98,6 +103,7 @@ public:
     const std::string &firmware_version() const;
     const std::string &api_version() const;
     bit_timing_t timing() const;
+    bit_timing_t data_timing() const;
 
     /* Detail for the last failure, for logging. */
     std::string last_error() const;
